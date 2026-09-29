@@ -119,6 +119,7 @@ src/
     courses.ts         Course queries
     bunny.ts           Bunny Stream signing and upload
   generated/prisma/    Generated client (gitignored)
+  app/global-error.tsx Last-resort error UI (catches root-layout failures)
 docker-compose.yml     Local Postgres for development
 apphosting.yaml        Firebase App Hosting config
 .firebaserc            Firebase project id
@@ -195,8 +196,18 @@ Then, in the Firebase console for the backend:
   run `npx prisma migrate deploy` against the hosted database once.
 
 `npm run build` does not touch the database, so the build succeeds even before
-`DATABASE_URL` is set; the failure appears at request time, and `src/app/error.tsx`
-surfaces it with a hint about SQLite.
+`DATABASE_URL` is set. The failure then appears at request time, and
+`src/app/global-error.tsx` reports it with the likely cause rather than a bare
+500.
+
+Without `DATABASE_URL` the app is partly usable, which is enough to confirm a
+deployment is healthy:
+
+| Route                                    | Result       |
+| ---------------------------------------- | ------------ |
+| `/login`, `/signup`                      | 200, renders |
+| `/dashboard`, `/instructor`              | 307 redirect |
+| `/`, `/courses`, `/courses/*`, `/learn/*` | 500          |
 
 ### Applying migrations to the hosted database
 
