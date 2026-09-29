@@ -1,0 +1,27 @@
+# Local Postgres for development.
+#
+#   docker compose up -d
+#
+# Matches the DATABASE_URL in .env. The production deployment uses a hosted
+# Postgres (Neon, Cloud SQL, ...) with the same schema, so migrations are
+# identical in both environments.
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: coursehub
+      POSTGRES_PASSWORD: coursehub
+      POSTGRES_DB: coursehub
+    ports:
+      - "5432:5432"
+    volumes:
+      - coursehub-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coursehub -d coursehub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  coursehub-pgdata:

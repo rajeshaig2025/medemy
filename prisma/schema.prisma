@@ -1,0 +1,210 @@
+// CourseHub data model.
+//
+// Kept deliberately close to what a payments integration will need later, even
+// though v1 only deals in free courses: `Course.priceCents` and the `Order`
+// model exist so that adding Stripe does not require reshaping the schema.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// Postgres rather than SQLite, because the app is deployed to Firebase App
+// Hosting (Cloud Run) where the filesystem is ephemeral -- a SQLite file would
+// be empty on every deploy.
+//
+// The connection URL lives in prisma.config.ts (used by the Prisma CLI) and is
+// passed to PrismaClient as a driver adapter (used by the app). See src/lib/db.ts.
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  ALL_LEVELS
+}
+
+enum VideoProvider {
+  BUNNY
+  YOUTUBE
+  VIMEO
+  EXTERNAL
+}
+
+enum LessonKind {
+  VIDEO
+  ARTICLE
+  QUIZ
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(STUDENT)
+  headline     String?
+  bio          String?
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions          Session[]
+  courses           Course[]          @relation("CourseInstructor")
+  enrollments       Enrollment[]
+  lessonProgress    LessonProgress[]
+  reviews           Review[]
+
+  @@index([role])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Category {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
+  description String?
+
+  courses Course[]
+}
+
+model Course {
+  id            String       @id @default(cuid())
+  slug          String       @unique
+  title         String
+  subtitle      String?
+  description   String
+  thumbnailUrl  String?
+  status        CourseStatus @default(DRAFT)
+  level         CourseLevel  @default(ALL_LEVELS)
+  priceCents    Int          @default(0)
+  currency      String       @default("USD")
+
+  instructorId String
+  categoryId   String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime?
+
+  instructor User        @relation("CourseInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
+  category   Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  sections   Section[]
+  enrollments Enrollment[]
+  reviews    Review[]
+
+  @@index([status, publishedAt])
+  @@index([instructorId])
+  @@index([categoryId])
+}
+
+model Section {
+  id       String @id @default(cuid())
+  title    String
+  position Int
+
+  courseId String
+  course   Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons  Lesson[]
+
+  @@unique([courseId, position])
+}
+
+model Lesson {
+  id              String        @id @default(cuid())
+  title           String
+  summary         String?
+  content         String?
+  kind            LessonKind    @default(VIDEO)
+  position        Int
+  durationSeconds Int           @default(0)
+  isPreview       Boolean       @default(false)
+
+  // Bunny Stream stores a video id, not a URL. The id is exchanged for a
+  // short-lived signed playback URL at request time so the raw CDN URL is
+  // never exposed to unauthorised users.
+  videoProvider VideoProvider @default(BUNNY)
+  videoId       String?
+  videoUrl      String?
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  progress LessonProgress[]
+
+  @@unique([sectionId, position])
+  @@index([sectionId])
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  lastViewedAt DateTime?
+
+  userId   String
+  courseId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([courseId])
+}
+
+model LessonProgress {
+  id          String   @id @default(cuid())
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  lastPositionSeconds Int @default(0)
+
+  userId   String
+  lessonId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([lessonId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  userId   String
+  courseId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([courseId])
+}

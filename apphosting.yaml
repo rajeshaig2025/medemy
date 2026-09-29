@@ -1,0 +1,21 @@
+# Firebase App Hosting configuration.
+# Reference: https://firebase.google.com/docs/app-hosting/configure
+#
+# Firebase App Hosting detects Next.js automatically; this file only pins down
+# the things it cannot infer.
+
+runConfig:
+  # App Hosting injects PORT; binding 0.0.0.0 is required for the container to
+  # receive traffic.
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  - variable: NODE_ENV
+    value: production
+
+# Prisma Client is generated during install via the postinstall script in
+# package.json, so no build-time script is needed here.
