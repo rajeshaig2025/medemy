@@ -81,6 +81,20 @@ function toCardData(row: CardRow): CourseCardData {
   };
 }
 
+/**
+ * Free-text match across the fields a learner would search on.
+ *
+ * `mode: "insensitive"` is required, not cosmetic: Prisma maps `contains` to
+ * SQL `LIKE`, which is case-SENSITIVE on Postgres. SQLite's `LIKE` is
+ * case-insensitive for ASCII, so this worked before the database was moved and
+ * would otherwise have broken silently.
+ */
+const textMatches = (query: string) => [
+  { title: { contains: query, mode: "insensitive" as const } },
+  { subtitle: { contains: query, mode: "insensitive" as const } },
+  { description: { contains: query, mode: "insensitive" as const } },
+];
+
 export async function getPublishedCourses(options?: {
   query?: string;
   categorySlug?: string;
@@ -93,15 +107,7 @@ export async function getPublishedCourses(options?: {
     where: {
       status: "PUBLISHED",
       ...(categorySlug ? { category: { slug: categorySlug } } : {}),
-      ...(query
-        ? {
-            OR: [
-              { title: { contains: query } },
-              { subtitle: { contains: query } },
-              { description: { contains: query } },
-            ],
-          }
-        : {}),
+      ...(query ? { OR: textMatches(query) } : {}),
     },
     orderBy: { publishedAt: "desc" },
     select: cardSelect,
@@ -122,15 +128,7 @@ export async function countPublishedCourses(options?: {
       ...(options?.categorySlug
         ? { category: { slug: options.categorySlug } }
         : {}),
-      ...(options?.query
-        ? {
-            OR: [
-              { title: { contains: options.query } },
-              { subtitle: { contains: options.query } },
-              { description: { contains: options.query } },
-            ],
-          }
-        : {}),
+      ...(options?.query ? { OR: textMatches(options.query) } : {}),
     },
   });
 }
