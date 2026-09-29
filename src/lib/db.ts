@@ -6,17 +6,23 @@ import { PrismaClient } from "@/generated/prisma/client";
 /**
  * Prisma Client construction.
  *
- * Prisma 7 requires a driver adapter rather than a connection string in the
- * schema. The adapter is not interchangeable at runtime: Prisma validates it
- * against the `provider` in prisma/schema.prisma and throws if they disagree,
- * which is why the provider is a single fixed value rather than something
- * derived from DATABASE_URL.
+ * Two constraints shaped this file:
  *
- * The adapter is only *constructed* here, never connected, so importing this
- * module during `next build` does not require a reachable database.
+ * 1. Prisma 7 requires a driver adapter rather than a connection string in the
+ *    schema, and validates the adapter against the `provider` in
+ *    prisma/schema.prisma. They cannot disagree, so the provider is a single
+ *    fixed value rather than something derived from DATABASE_URL.
+ *
+ * 2. Construction is deferred until the first query. `next build` imports every
+ *    route module to collect page data, and `DATABASE_URL` may legitimately be
+ *    absent at that point (it is supplied at runtime by the host). Building the
+ *    client eagerly would throw during import and fail the build, so `db` is a
+ *    Proxy that instantiates on first property access instead.
  */
 
-function createClient() {
+let client: PrismaClient | undefined;
+
+function buildClient() {
   const url = process.env.DATABASE_URL;
   if (!url) {
     throw new Error(
@@ -44,15 +50,29 @@ function createClient() {
   });
 }
 
-// Reuse one client across hot reloads in development. Without this, every edit
-// would open a new connection and eventually exhaust the database's connection
-// limit.
-const globalForPrisma = globalThis as unknown as {
-  prisma?: ReturnType<typeof createClient>;
-};
+/** The shared client. Reused across hot reloads in development, where every
+ *  edit would otherwise open another connection and exhaust the limit. */
+function getClient() {
+  if (client) return client;
 
-export const db = globalForPrisma.prisma ?? createClient();
+  const globalForPrisma = globalThis as unknown as { prismaClient?: PrismaClient };
+  if (process.env.NODE_ENV !== "production" && globalForPrisma.prismaClient) {
+    client = globalForPrisma.prismaClient;
+    return client;
+  }
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = db;
+  client = buildClient();
+  if (process.env.NODE_ENV !== "production") {
+    globalForPrisma.prismaClient = client;
+  }
+  return client;
 }
+
+export const db: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, property, receiver) {
+    const instance = getClient();
+    const value = Reflect.get(instance, property, receiver);
+    // Model delegates are objects with methods; bind so `this` stays correct.
+    return typeof value === "function" ? value.bind(instance) : value;
+  },
+});
